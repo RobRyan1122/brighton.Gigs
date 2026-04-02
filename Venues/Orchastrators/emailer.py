@@ -3,16 +3,17 @@ import os
 from email.message import EmailMessage
 from pathlib import Path
 import mimetypes
+import config
 
 # =========================
 # CONFIG
 # =========================
 
-SENDER_EMAIL = "robautomation57@gmail.com"
-SENDER_PASSWORD = "lyztqxzaxryrnegu"  
-RECIPIENT_EMAIL = "robautomation57@gmail.com"
+SENDER_EMAIL = config.EMAILADDRESS
+SENDER_PASSWORD = config.PASSWORD  
+RECIPIENT_EMAIL = config.RECIPIENT_EMAIL
 
-FOLDER_PATH = Path(r"C:\Users\PC\OneDrive\Documents\BrightonLocalGigs\output_daily")
+FOLDER_PATH = config.FOLDER_PATH
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
