@@ -6,8 +6,11 @@ from pathlib import Path
 from datetime import date, timedelta
 
 
-SCRAPE_DIR = Path(r"C:\Users\PC\OneDrive\Documents\BrightonLocalGigs\Venues\scrapeFiles")
 
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+VENUES_DIR = SCRIPT_DIR.parent
+SCRAPE_DIR = VENUES_DIR / "scrapeFiles"
 
 def build_output_name(script_path: Path, start_date: date, end_date: date) -> str:
     """
