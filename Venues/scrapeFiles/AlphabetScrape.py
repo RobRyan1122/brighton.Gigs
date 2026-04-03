@@ -13,7 +13,8 @@ from selenium.webdriver.chrome.options import Options
 
 START_URL = "https://www.alphabetbrighton.com/listings"
 
-OUTPUT_DIR = Path(r"C:\Users\PC\OneDrive\Documents\BrightonLocalGigs\Venues\csvs")
+SCRIPT_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = SCRIPT_DIR.parent / "csvs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 

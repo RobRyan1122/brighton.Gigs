@@ -12,7 +12,8 @@ from pathlib import Path
 START_URL = "https://thegreendoorstore.co.uk/events/?event-type=gig&mon=&yr="
 
 
-OUTPUT_DIR = Path(r"C:\Users\PC\OneDrive\Documents\BrightonLocalGigs\Venues\csvs")
+SCRIPT_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = SCRIPT_DIR.parent / "csvs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 def _clean_text(s: str) -> str:

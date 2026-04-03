@@ -13,9 +13,13 @@ from PIL import Image, ImageDraw, ImageFont
 # Config
 # ----------------------------
 
-CSV_DIR = Path(r"C:\Users\PC\OneDrive\Documents\BrightonLocalGigs\Venues\csvs")
-BG_DIR = Path(r"C:\Users\PC\OneDrive\Documents\BrightonLocalGigs\Venues\imageassets")
-OUT_DIR = Path(r"C:\Users\PC\OneDrive\Documents\BrightonLocalGigs\output_daily")
+SCRIPT_DIR = Path(__file__).resolve().parent
+VENUES_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = VENUES_DIR.parent
+
+CSV_DIR = VENUES_DIR / "csvs"
+BG_DIR = VENUES_DIR / "imageassets"
+OUT_DIR = PROJECT_ROOT / "output_daily"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Canvas settings

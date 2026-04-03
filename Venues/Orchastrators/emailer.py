@@ -9,9 +9,10 @@ import config
 # CONFIG
 # =========================
 
-SENDER_EMAIL = config.EMAILADDRESS
-SENDER_PASSWORD = config.PASSWORD  
-RECIPIENT_EMAIL = config.RECIPIENT_EMAIL
+
+SENDER_EMAIL = os.environ["SENDER_EMAIL"]
+SENDER_PASSWORD = os.environ["SENDER_PASSWORD"]
+RECIPIENT_EMAIL = os.environ["RECIPIENT_EMAIL"]
 
 FOLDER_PATH = config.FOLDER_PATH
 

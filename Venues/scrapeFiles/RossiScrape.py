@@ -9,7 +9,8 @@ from bs4 import BeautifulSoup
 import pandas as pd
 from pathlib import Path
 
-OUTPUT_DIR = Path(r"C:\Users\PC\OneDrive\Documents\BrightonLocalGigs\Venues\csvs")
+SCRIPT_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = SCRIPT_DIR.parent / "csvs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 BASE_URL = "https://therossibar.co.uk"
