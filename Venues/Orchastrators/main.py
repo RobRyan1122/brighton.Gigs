@@ -5,7 +5,7 @@ import sys
 # Use the SAME Python interpreter (important for venv)
 PYTHON = sys.executable
 
-BASE_DIR = Path(r"C:\Users\PC\OneDrive\Documents\BrightonLocalGigs\Venues\Orchastrators")
+BASE_DIR = Path(__file__).resolve().parent
 
 SCRIPTS = [
     "run_all_scrapers.py",
@@ -38,7 +38,7 @@ def main():
     for script in SCRIPTS:
         run_script(script)
 
-    print("\n✅ All scripts completed successfully")
+    print("All scripts completed successfully")
 
 
 if __name__ == "__main__":
