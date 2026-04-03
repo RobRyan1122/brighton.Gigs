@@ -3,7 +3,7 @@ name: Run Brighton Gigs Pipeline
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/1 * * * *'g
+    - cron: '*/1 * * * *'
 
 jobs:
   run-pipeline:
