@@ -1,7 +1,6 @@
 import time
 import argparse
 import re
-from urllib.parse import urljoin
 from datetime import datetime, date
 
 import pandas as pd
@@ -15,7 +14,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR.parent / "csvs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-
 START_URL = "https://chalkvenue.com/live"
 
 
@@ -25,29 +23,21 @@ def _clean_text(s: str) -> str:
 
 def _parse_event_date(date_str: str) -> pd.Timestamp:
     """
-    Try a few common venue date formats.
+    Parse Chalk dates like:
+    9th April 2026
     """
     if not isinstance(date_str, str) or not date_str.strip():
         return pd.NaT
 
     raw = _clean_text(date_str)
 
-    for fmt in [
-        "%d-%m-%y",
-        "%d/%m/%y",
-        "%d/%m/%Y",
-        "%Y-%m-%d",
-        "%a %d %b %Y",
-        "%A %d %B %Y",
-        "%d %b %Y",
-        "%d %B %Y",
-    ]:
-        try:
-            return pd.to_datetime(raw, format=fmt, errors="raise")
-        except ValueError:
-            pass
+    # Remove ordinal suffixes: 1st, 2nd, 3rd, 4th, etc.
+    raw = re.sub(r"(\d{1,2})(st|nd|rd|th)", r"\1", raw, flags=re.IGNORECASE)
 
-    return pd.to_datetime(raw, errors="coerce", dayfirst=True)
+    try:
+        return pd.to_datetime(raw, format="%d %B %Y", errors="raise")
+    except ValueError:
+        return pd.NaT
 
 
 def make_driver() -> webdriver.Chrome:
@@ -64,12 +54,6 @@ def get_rendered_html(driver: webdriver.Chrome, url: str, wait_s: float = 3.0) -
 
 
 def parse_listing_for_event_urls(html: str) -> list[str]:
-    """
-    Extract Chalk event URLs directly from the clickable anchor:
-    <a class="col-span-2 text-center" href="...">
-        <h2>Event Name</h2>
-    </a>
-    """
     soup = BeautifulSoup(html, "html.parser")
     event_urls = []
     seen = set()
@@ -83,23 +67,18 @@ def parse_listing_for_event_urls(html: str) -> list[str]:
         if "/live/" not in href:
             continue
 
-        # extract name (just for debug visibility)
         h2 = a.find("h2")
         title = _clean_text(h2.get_text(" ", strip=True)) if h2 else "UNKNOWN"
 
         if href not in seen:
             seen.add(href)
             event_urls.append(href)
-
             print(f"FOUND EVENT: {title} -> {href}")
 
     return event_urls
 
 
 def extract_name_from_detail_page(soup: BeautifulSoup) -> str:
-    """
-    Try common title selectors first, then fallback to first h1/h2.
-    """
     selectors = [
         "h1",
         "main h1",
@@ -124,29 +103,28 @@ def extract_date_and_price_from_detail_page(soup: BeautifulSoup) -> tuple[str, s
     cost_value = "Unknown"
 
     # -------------------------
-    # 1. DATE (from <time>)
+    # 1. DATE
     # -------------------------
     time_el = soup.find("time")
 
-    if time_el and time_el.has_attr("datetime"):
-        raw_dt = time_el["datetime"]
-
-        try:
-            parsed = pd.to_datetime(raw_dt)
-            date_value = parsed.strftime("%Y-%m-%d")
-        except Exception:
-            date_value = raw_dt
+    if time_el:
+        # Prefer visible text like "9th April 2026"
+        visible_text = _clean_text(time_el.get_text(" ", strip=True))
+        if visible_text:
+            date_value = visible_text
+        elif time_el.has_attr("datetime"):
+            raw_dt = time_el["datetime"]
+            try:
+                parsed = pd.to_datetime(raw_dt)
+                date_value = parsed.strftime("%d/%m/%Y")
+            except Exception:
+                date_value = raw_dt
 
     # -------------------------
     # 2. PRICE
     # -------------------------
     full_text = _clean_text(soup.get_text(" ", strip=True))
 
-    # Prefer amounts that are explicitly ticket prices, e.g.:
-    # £35 adv
-    # 35 adv
-    # £27.50 door
-    # 27.50 door
     m = re.search(
         r"(£\s?\d+(?:\.\d{1,2})?|\b\d+(?:\.\d{1,2})?)\s*(adv|door)\b",
         full_text,
@@ -157,7 +135,6 @@ def extract_date_and_price_from_detail_page(soup: BeautifulSoup) -> tuple[str, s
         label = m.group(2).lower()
         cost_value = f"{amount} {label}"
     else:
-        # Fallback: plain £ price not tied to adv/door
         m = re.search(r"£\s?\d+(?:\.\d{1,2})?\b", full_text)
         if m:
             cost_value = m.group(0).replace("£ ", "£").strip()
@@ -190,8 +167,6 @@ def scrape_all_gig_events(start: date, end: date, polite_delay_s: float = 1.0) -
         event_urls = parse_listing_for_event_urls(listing_html)
 
         print("EVENT URLS FOUND:", len(event_urls))
-        for url in event_urls[:10]:
-            print(url)
 
         rows = []
 
@@ -224,7 +199,10 @@ def scrape_all_gig_events(start: date, end: date, polite_delay_s: float = 1.0) -
                     print("Reached first event after end date, stopping scrape.")
                     break
 
+                # Store output in British format
+                row["date"] = event_date.strftime("%d/%m/%Y")
                 row["event_date"] = event_date
+
                 rows.append(row)
                 print("KEEPING:", event_url, row)
 
@@ -249,8 +227,6 @@ def scrape_all_gig_events(start: date, end: date, polite_delay_s: float = 1.0) -
     print(df[["date", "event_name", "cost", "event_date"]].head(20))
 
     return df.reset_index(drop=True)
-
-
 
 
 def _parse_cli_date(s: str) -> date:
