@@ -9,6 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 SCRIPTS = [
     "run_all_scrapers.py",
+    "normalise_costs.py",
     "graphics.py",
     "emailer.py",
     "cleanup.py",
