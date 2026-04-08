@@ -124,6 +124,8 @@ def venue_name_from_filename(path: Path) -> str:
         "dust": "Dust",
         "folklore": "The Folklore Rooms",
         "folklorerooms": "The Folklore Rooms",
+        "princealbert": "The Prince Albert",
+        "prince_albert": "The Prince Albert",
     }
 
     if cleaned in mapping:
