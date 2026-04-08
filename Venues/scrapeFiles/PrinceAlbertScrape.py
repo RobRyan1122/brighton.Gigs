@@ -51,20 +51,7 @@ def get_html(driver, url, wait=5):
     return driver.page_source
 
 
-def looks_like_date(text: str) -> bool:
-    if not text:
-        return False
-    return bool(re.match(r"^[A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?$", text.strip(), flags=re.IGNORECASE))
 
-
-def looks_like_price(text: str) -> bool:
-    if not text:
-        return False
-    return (
-        "free" in text.lower()
-        or "ticket" in text.lower()
-        or bool(re.search(r"£\s*\d", text))
-    )
 
 
 def normalise_price(text: str) -> str:
@@ -84,48 +71,25 @@ def parse_homepage(html):
     soup = BeautifulSoup(html, "html.parser")
     rows = []
 
-    content_nodes = soup.select(".jet-listing-dynamic-field__content")
-    texts = [_clean_text(node.get_text(" ", strip=True)) for node in content_nodes]
-    texts = [t for t in texts if t]
+    name_nodes = soup.select('div[data-id="154e459"] .jet-listing-dynamic-field__content')
+    date_nodes = soup.select('div[data-id="27af3ce"] .jet-listing-dynamic-field__content')
+    price_nodes = soup.select('div[data-id="af29adb"] .jet-listing-dynamic-field__content')
 
-    i = 0
-    while i < len(texts):
-        text = texts[i]
+    count = min(len(name_nodes), len(date_nodes), len(price_nodes))
 
-        if looks_like_date(text):
-            date_value = text
+    for i in range(count):
+        event_name = _clean_text(name_nodes[i].get_text(" ", strip=True))
+        date_value = _clean_text(date_nodes[i].get_text(" ", strip=True))
+        price_value = _clean_text(price_nodes[i].get_text(" ", strip=True))
 
-            event_name = ""
-            price_value = ""
+        if not event_name or not date_value:
+            continue
 
-            # walk backwards to find the event name
-            j = i - 1
-            while j >= 0:
-                candidate = texts[j]
-                if not looks_like_date(candidate) and not looks_like_price(candidate):
-                    event_name = candidate
-                    break
-                j -= 1
-
-            # walk forwards to find the price
-            k = i + 1
-            while k < len(texts):
-                candidate = texts[k]
-                if looks_like_price(candidate):
-                    price_value = normalise_price(candidate)
-                    break
-                if looks_like_date(candidate):
-                    break
-                k += 1
-
-            if event_name:
-                rows.append({
-                    "date": date_value,
-                    "event_name": event_name,
-                    "cost": price_value if price_value else "Unknown",
-                })
-
-        i += 1
+        rows.append({
+            "date": date_value,
+            "event_name": event_name,
+            "cost": normalise_price(price_value) if price_value else "Unknown",
+        })
 
     df = pd.DataFrame(rows)
 
