@@ -62,13 +62,49 @@ FONT_FOOT = _load_font(FONT_REGULAR_PATHS, 26)
 
 
 # ----------------------------
+# Background image pool
+# ----------------------------
+
+class BackgroundPool:
+    """Cycles through all background images before reusing any."""
+    
+    def __init__(self, bg_dir: Path):
+        self.bg_dir = bg_dir
+        self.available: list[Path] = []
+        self._reload_pool()
+    
+    def _reload_pool(self):
+        exts = {".jpg", ".jpeg", ".png", ".webp"}
+        all_files = [p for p in self.bg_dir.iterdir() if p.is_file() and p.suffix.lower() in exts]
+        random.shuffle(all_files)
+        self.available = all_files
+    
+    def get_next(self) -> Optional[Path]:
+        if not self.available:
+            self._reload_pool()
+        
+        if not self.available:
+            return None
+        
+        return self.available.pop()
+
+
+# Global instance
+_bg_pool: Optional[BackgroundPool] = None
+
+
+def get_bg_pool() -> BackgroundPool:
+    global _bg_pool
+    if _bg_pool is None:
+        _bg_pool = BackgroundPool(BG_DIR)
+    return _bg_pool
+
+
+# ----------------------------
 # Venue name mapping
 # ----------------------------
 
 def venue_name_from_filename(path: Path) -> str:
-    """
-    Convert CSV filename to nice venue name.
-    """
     stem = path.stem.lower()
 
     cleaned = stem
@@ -101,14 +137,10 @@ def venue_name_from_filename(path: Path) -> str:
 # ----------------------------
 
 def normalise_date_str(s: str) -> Optional[pd.Timestamp]:
-    """
-    Convert various date strings to a normalized date (midnight) Timestamp.
-    """
     if not isinstance(s, str) or not s.strip():
         return None
 
     raw = s.strip()
-
     raw = raw.split("–")[0].strip()
     raw = raw.split("-")[0].strip() if " - " in raw else raw
 
@@ -132,22 +164,15 @@ def normalise_date_str(s: str) -> Optional[pd.Timestamp]:
 # Background helpers
 # ----------------------------
 
-def get_background_files(bg_dir: Path) -> list[Path]:
-    exts = {".jpg", ".jpeg", ".png", ".webp"}
-    return [p for p in bg_dir.iterdir() if p.is_file() and p.suffix.lower() in exts]
-
-
 def resize_and_crop_to_fill(img: Image.Image, target_width: int, target_height: int) -> Image.Image:
     src_w, src_h = img.size
     src_ratio = src_w / src_h
     target_ratio = target_width / target_height
 
     if src_ratio > target_ratio:
-        # Image is wider than target: fit height, crop width
         new_h = target_height
         new_w = int(new_h * src_ratio)
     else:
-        # Image is taller/narrower than target: fit width, crop height
         new_w = target_width
         new_h = int(new_w / src_ratio)
 
@@ -162,13 +187,11 @@ def resize_and_crop_to_fill(img: Image.Image, target_width: int, target_height: 
 
 
 def make_background() -> Image.Image:
-    bg_files = get_background_files(BG_DIR)
+    pool = get_bg_pool()
+    chosen = pool.get_next()
 
-    if not bg_files:
-        # fallback if folder is empty
+    if chosen is None:
         return Image.new("RGB", (WIDTH, HEIGHT), "white")
-
-    chosen = random.choice(bg_files)
 
     with Image.open(chosen) as bg:
         bg = bg.convert("RGB")
@@ -210,11 +233,11 @@ def draw_section(
     venue_name: str,
     rows: list[tuple[str, str]],
 ) -> int:
-    draw.text((x, y), venue_name, font=FONT_VENUE, fill="black")
+    draw.text((x, y), venue_name, font=FONT_VENUE, fill="White")
     y += 54
 
     if not rows:
-        draw.text((x, y), "No events", font=FONT_EVENT, fill="black")
+        draw.text((x, y), "No events", font=FONT_EVENT, fill="White")
         return y + 46
 
     for event_name, cost in rows:
@@ -227,11 +250,11 @@ def draw_section(
         lines = wrap_text(draw, str(event_name), FONT_EVENT, name_max_w)
 
         for line in lines:
-            draw.text((x, y), line, font=FONT_EVENT, fill="black")
+            draw.text((x, y), line, font=FONT_EVENT, fill="White")
             y += 40
 
         if cost_text:
-            draw.text((x + w - cost_w, y - 40), cost_text, font=FONT_COST, fill="black")
+            draw.text((x + w - cost_w, y - 40), cost_text, font=FONT_COST, fill="White")
 
         y += 18
 
@@ -285,10 +308,8 @@ def render_day_poster(day: pd.Timestamp, df_day: pd.DataFrame) -> Path:
     img = make_background()
     draw = ImageDraw.Draw(img)
 
-    
-
     day_str = day.strftime("%a %d %b %Y")
-    draw.text((PADDING, PADDING), day_str, font=FONT_DATE, fill="black")
+    draw.text((PADDING, PADDING), day_str, font=FONT_DATE, fill="White")
 
     y = PADDING + 90
 
@@ -305,13 +326,13 @@ def render_day_poster(day: pd.Timestamp, df_day: pd.DataFrame) -> Path:
         y += 30
 
         if y > HEIGHT - PADDING - 80:
-            draw.text((PADDING, HEIGHT - PADDING - 60), "…more events not shown", font=FONT_FOOT, fill="black")
+            draw.text((PADDING, HEIGHT - PADDING - 60), "…more events not shown", font=FONT_FOOT, fill="White")
             break
 
     footer = "brighton.localgigs"
     footer_bbox = draw.textbbox((0, 0), footer, font=FONT_FOOT)
     footer_w = footer_bbox[2] - footer_bbox[0]
-    draw.text((WIDTH - PADDING - footer_w, HEIGHT - PADDING - 40), footer, font=FONT_FOOT, fill="black")
+    draw.text((WIDTH - PADDING - footer_w, HEIGHT - PADDING - 40), footer, font=FONT_FOOT, fill="White")
 
     safe_day = day.strftime("%Y-%m-%d")
     out_path = OUT_DIR / f"{safe_day}.png"
