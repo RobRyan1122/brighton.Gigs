@@ -305,41 +305,242 @@ def load_all_csvs(csv_dir: Path) -> pd.DataFrame:
 
     return pd.concat(frames, ignore_index=True)
 
+def measure_section_height(
+    draw: ImageDraw.ImageDraw,
+    w: int,
+    venue_name: str,
+    rows: list[tuple[str, str]],
+) -> int:
+    """
+    Calculate how much vertical space a venue section will use
+    without actually drawing it.
+    """
 
-def render_day_poster(day: pd.Timestamp, df_day: pd.DataFrame) -> Path:
-    img = make_background()
-    draw = ImageDraw.Draw(img)
+    height = 54  # venue heading
 
-    day_str = day.strftime("%a %d %b %Y")
-    draw.text((PADDING, PADDING), day_str, font=FONT_DATE, fill="White")
+    if not rows:
+        return height + 46
 
-    y = PADDING + 90
+    for event_name, cost in rows:
+        cost_text = "" if pd.isna(cost) else str(cost)
 
-    df_day = df_day.sort_values(["venue", "event_name"])
+        cost_bbox = draw.textbbox(
+            (0, 0),
+            cost_text,
+            font=FONT_COST,
+        )
+
+        cost_w = cost_bbox[2] - cost_bbox[0]
+
+        name_max_w = w - cost_w - 30
+
+        lines = wrap_text(
+            draw,
+            str(event_name),
+            FONT_EVENT,
+            name_max_w,
+        )
+
+        height += len(lines) * 40
+        height += 18
+
+    return height
+
+def render_day_poster(
+    day: pd.Timestamp,
+    df_day: pd.DataFrame,
+) -> list[Path]:
+
+    df_day = df_day.sort_values(
+        ["venue", "event_name"]
+    )
+
     venues = df_day["venue"].unique().tolist()
 
     section_w = WIDTH - 2 * PADDING
 
-    for v in venues:
-        rows = df_day[df_day["venue"] == v][["event_name", "cost"]].fillna("").values.tolist()
-        rows = [(r[0], r[1]) for r in rows]
+    # Build all venue sections first.
+    sections = []
 
-        y = draw_section(img, draw, PADDING, y, section_w, v, rows)
-        y += 30
+    for venue in venues:
+        rows = (
+            df_day[
+                df_day["venue"] == venue
+            ][
+                ["event_name", "cost"]
+            ]
+            .fillna("")
+            .values
+            .tolist()
+        )
 
-        if y > HEIGHT - PADDING - 80:
-            draw.text((PADDING, HEIGHT - PADDING - 60), "…more events not shown", font=FONT_FOOT, fill="White")
-            break
+        rows = [
+            (r[0], r[1])
+            for r in rows
+        ]
 
-    footer = "brighton.localgigs"
-    footer_bbox = draw.textbbox((0, 0), footer, font=FONT_FOOT)
-    footer_w = footer_bbox[2] - footer_bbox[0]
-    draw.text((WIDTH - PADDING - footer_w, HEIGHT - PADDING - 40), footer, font=FONT_FOOT, fill="White")
+        sections.append(
+            (
+                venue,
+                rows,
+            )
+        )
 
-    safe_day = day.strftime("%Y-%m-%d")
-    out_path = OUT_DIR / f"{safe_day}.png"
-    img.save(out_path, "PNG")
-    return out_path
+    pages = []
+    current_page = []
+
+    # Dummy canvas used only for measuring text.
+    measure_img = Image.new(
+        "RGB",
+        (WIDTH, HEIGHT),
+    )
+
+    measure_draw = ImageDraw.Draw(
+        measure_img
+    )
+
+    # Space available below date and above footer.
+    start_y = PADDING + 90
+    bottom_limit = HEIGHT - PADDING - 70
+
+    current_y = start_y
+
+    for venue, rows in sections:
+
+        section_height = measure_section_height(
+            measure_draw,
+            section_w,
+            venue,
+            rows,
+        )
+
+        # Include spacing after venue.
+        required_height = section_height + 30
+
+        # If this section will not fit and there are already
+        # sections on this page, start a new page.
+        if (
+            current_page
+            and current_y + required_height
+            > bottom_limit
+        ):
+            pages.append(
+                current_page
+            )
+
+            current_page = []
+            current_y = start_y
+
+        current_page.append(
+            (
+                venue,
+                rows,
+            )
+        )
+
+        current_y += required_height
+
+    if current_page:
+        pages.append(
+            current_page
+        )
+
+    output_paths = []
+
+    safe_day = day.strftime(
+        "%Y-%m-%d"
+    )
+
+    for page_number, page_sections in enumerate(
+        pages,
+        start=1,
+    ):
+
+        img = make_background()
+        draw = ImageDraw.Draw(
+            img
+        )
+
+        day_str = day.strftime(
+            "%a %d %b %Y"
+        )
+
+        # Add page number only when there is more than one image.
+        if len(pages) > 1:
+            day_str += (
+                f"  ({page_number}/{len(pages)})"
+            )
+
+        draw.text(
+            (PADDING, PADDING),
+            day_str,
+            font=FONT_DATE,
+            fill="White",
+        )
+
+        y = start_y
+
+        for venue, rows in page_sections:
+
+            y = draw_section(
+                img,
+                draw,
+                PADDING,
+                y,
+                section_w,
+                venue,
+                rows,
+            )
+
+            y += 30
+
+        footer = "brighton.localgigs"
+
+        footer_bbox = draw.textbbox(
+            (0, 0),
+            footer,
+            font=FONT_FOOT,
+        )
+
+        footer_w = (
+            footer_bbox[2]
+            - footer_bbox[0]
+        )
+
+        draw.text(
+            (
+                WIDTH - PADDING - footer_w,
+                HEIGHT - PADDING - 40,
+            ),
+            footer,
+            font=FONT_FOOT,
+            fill="White",
+        )
+
+        if page_number == 1:
+            filename = (
+                f"{safe_day}.png"
+            )
+        else:
+            filename = (
+                f"{safe_day}_{page_number}.png"
+            )
+
+        out_path = (
+            OUT_DIR
+            / filename
+        )
+
+        img.save(
+            out_path,
+            "PNG",
+        )
+
+        output_paths.append(
+            out_path
+        )
+
+    return output_paths
 
 
 def main():
@@ -351,8 +552,15 @@ def main():
     for d in days:
         day_ts = pd.Timestamp(d)
         df_day = all_events[all_events["event_day"] == day_ts]
-        out = render_day_poster(day_ts, df_day)
-        print(f"Saved {out}")
+        outputs = render_day_poster(
+            day_ts,
+            df_day,
+        )
+
+        for out in outputs:
+            print(
+                f"Saved {out}"
+            )
 
 
 if __name__ == "__main__":
