@@ -8,6 +8,10 @@ on:
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      actions: write
 
     env:
       SENDER_EMAIL: ${{ vars.SENDER_EMAIL }}
@@ -17,6 +21,13 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+
+      # Refresh the schedule before scraping, even if a venue later fails.
+      - name: Keep weekly schedule active
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh api --method PUT "repos/$GH_REPO/actions/workflows/run_pipeline.yml/enable"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -31,8 +42,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Run regression tests
+        run: python -m unittest discover -s tests
+
       - name: Run pipeline
         run: python Venues/Orchastrators/main.py
+
+      - name: Email failure alert
+        if: failure()
+        run: python Venues/Orchastrators/alert_failure.py
 
       - name: Upload outputs
         if: always()
@@ -40,6 +58,7 @@ jobs:
         with:
           name: brighton-gigs-output
           path: |
+            scraper_health.md
             output_daily
             Venues/csvs
           if-no-files-found: warn

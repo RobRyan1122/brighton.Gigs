@@ -3,6 +3,7 @@ import os
 from email.message import EmailMessage
 from pathlib import Path
 import mimetypes
+import re
 import config
 
 # =========================
@@ -35,7 +36,13 @@ msg.set_content("Here are today's generated gig posters.")
 # ATTACH IMAGES
 # =========================
 
-for file_path in FOLDER_PATH.iterdir():
+# ISO date filenames sort chronologically; sort page suffixes numerically too.
+def attachment_sort_key(path: Path):
+    return [int(part) if part.isdigit() else part.lower()
+            for part in re.split(r"(\d+)", path.stem)]
+
+
+for file_path in sorted(FOLDER_PATH.iterdir(), key=attachment_sort_key):
     if file_path.is_file():
         mime_type, _ = mimetypes.guess_type(file_path)
 
