@@ -13,7 +13,7 @@ can be run localy by adding email passowrds and recipients to config.py or throu
 
 Venue health checks
 
-Each scheduled or manual GitHub pipeline run validates every venue CSV for the upcoming seven-day window. Empty results, missing files, invalid columns, missing dates/names, scraper errors, or a 15-minute scraper timeout fail the run after all venues have been checked. Existing CSVs for that run are removed first so stale output cannot pass. Failed venue checks stop poster generation and delivery.
+Each scheduled or manual GitHub pipeline run validates every venue CSV for the upcoming seven-day window. Empty results, missing files, invalid columns, missing dates/names, scraper errors, or a 15-minute scraper timeout are reported after all venues have been checked. Existing CSVs for that run are removed first so stale output cannot pass. When some venues fail, posters are generated and emailed using only successful venues from that run, followed by a separate warning email naming omitted venues. Old CSVs from failed venues are excluded. If every venue fails, the pipeline stops and sends a failure email.
 
 The Actions run summary and scraper_health.md artifact list venue counts and failures. A failed run sends an alert with the report and run link using the existing SENDER_EMAIL, RECIPIENT_EMAIL, and SENDER_PASSWORD settings. Alert delivery requires those settings and a working SMTP connection. Zero results can also mean a quiet week; inspect the venue before assuming the website changed. The schedule remains weekly; the workflow can also be started manually.
 

@@ -48,6 +48,10 @@ jobs:
       - name: Run pipeline
         run: python Venues/Orchastrators/main.py
 
+      - name: Email warning about omitted venues
+        if: success()
+        run: python Venues/Orchastrators/alert_failure.py --venue-warning
+
       - name: Email failure alert
         if: failure()
         run: python Venues/Orchastrators/alert_failure.py
@@ -58,6 +62,7 @@ jobs:
         with:
           name: brighton-gigs-output
           path: |
+            scraper_health.json
             scraper_health.md
             output_daily
             Venues/csvs

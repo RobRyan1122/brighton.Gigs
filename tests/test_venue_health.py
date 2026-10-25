@@ -1,4 +1,5 @@
-﻿import os
+import json
+import os
 import importlib.util
 import tempfile
 import unittest
@@ -37,9 +38,11 @@ class VenueHealthTests(unittest.TestCase):
                     output.write_text('date,event_name,cost\n' + ('26/10/2026,Band,10\n' if name == 'Good' else ''))
                 return subprocess.CompletedProcess(cmd, 1 if name == 'Crash' else 0, '', '')
             with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false', 'GITHUB_STEP_SUMMARY': ''}), patch.object(runner, 'SCRAPE_DIR', scripts), patch.object(runner, 'VENUES_DIR', venues), patch.object(runner.subprocess, 'run', side_effect=fake_run) as run:
-                with self.assertRaises(RuntimeError) as error: runner.main()
+                runner.main()
             self.assertEqual(run.call_count, 4)
-            for name in ['Empty', 'Stale', 'Crash']: self.assertIn(name, str(error.exception))
+            health = json.loads((root / 'scraper_health.json').read_text())
+            for name in ['Empty', 'Stale', 'Crash']: self.assertTrue(any(name in failure for failure in health['failures']))
+            self.assertEqual(len(health['successful_files']), 1)
             self.assertIn('Good | 1 gigs', (root / 'scraper_health.md').read_text())
 
 

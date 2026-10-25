@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 import random
+import json
 
 import pandas as pd
 from dateutil import parser as dtparser
@@ -285,7 +286,12 @@ def load_csv_with_venue(path: Path) -> pd.DataFrame:
 
 
 def load_all_csvs(csv_dir: Path) -> pd.DataFrame:
-    csv_paths = sorted(csv_dir.glob("*.csv"))
+    health_path = PROJECT_ROOT / "scraper_health.json"
+    if health_path.exists():
+        health = json.loads(health_path.read_text(encoding="utf-8"))
+        csv_paths = [csv_dir / name for name in health["successful_files"]]
+    else:
+        csv_paths = sorted(csv_dir.glob("*.csv"))
 
     if not csv_paths:
         raise FileNotFoundError(f"No CSV files found in {csv_dir}")

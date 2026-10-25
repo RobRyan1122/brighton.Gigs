@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import csv
 import os
 import subprocess
@@ -65,6 +66,7 @@ def main() -> None:
     print("-" * 50)
 
     failures = []
+    successful_files = []
     summary = ["## Venue scraper results", f"Date range: {start_str} to {end_str}", "", "| Venue | Result |", "| --- | --- |"]
 
     for script_path in py_files:
@@ -109,15 +111,16 @@ def main() -> None:
             if result.returncode != 0:
                 raise RuntimeError(f"Scraper exited with code {result.returncode}; see logs above")
             count = validate_output(output_path)
+            successful_files.append(out_name)
             print(f"Finished successfully: {script_path.name}: {count} gigs")
             summary.append(f"| {script_path.stem} | {count} gigs |")
 
         except Exception as e:
             message = f"{script_path.stem}: {e}"
             failures.append(message)
-            print(f"ERROR: {message}")
+            print(f"WARNING: {message}")
             if os.environ.get("GITHUB_ACTIONS") == "true":
-                print(f"::error file=Venues/scrapeFiles/{script_path.name}::{message}")
+                print(f"::warning file=Venues/scrapeFiles/{script_path.name}::{message}")
             summary.append(f"| {script_path.stem} | FAILED: {e} |")
 
         print("-" * 50)
@@ -127,8 +130,12 @@ def main() -> None:
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
             handle.write(report)
+    (VENUES_DIR.parent / "scraper_health.json").write_text(
+        json.dumps({"failures": failures, "successful_files": successful_files}), encoding="utf-8")
+    if not successful_files:
+        raise RuntimeError("No venues returned usable gigs:\n" + "\n".join(failures))
     if failures:
-        raise RuntimeError("Venue checks failed:\n" + "\n".join(failures))
+        print("Continuing with successful venues; failed venues will be omitted.")
 
 
 if __name__ == "__main__":
