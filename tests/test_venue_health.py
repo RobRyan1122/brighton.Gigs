@@ -1,4 +1,5 @@
-﻿import importlib.util
+﻿import os
+import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,7 +36,7 @@ class VenueHealthTests(unittest.TestCase):
                 if name in ['Good', 'Empty']:
                     output.write_text('date,event_name,cost\n' + ('26/10/2026,Band,10\n' if name == 'Good' else ''))
                 return subprocess.CompletedProcess(cmd, 1 if name == 'Crash' else 0, '', '')
-            with patch.object(runner, 'SCRAPE_DIR', scripts), patch.object(runner, 'VENUES_DIR', venues), patch.object(runner.subprocess, 'run', side_effect=fake_run) as run:
+            with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false', 'GITHUB_STEP_SUMMARY': ''}), patch.object(runner, 'SCRAPE_DIR', scripts), patch.object(runner, 'VENUES_DIR', venues), patch.object(runner.subprocess, 'run', side_effect=fake_run) as run:
                 with self.assertRaises(RuntimeError) as error: runner.main()
             self.assertEqual(run.call_count, 4)
             for name in ['Empty', 'Stale', 'Crash']: self.assertIn(name, str(error.exception))

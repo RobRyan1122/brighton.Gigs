@@ -1,4 +1,3 @@
-import time
 import argparse
 import re
 
@@ -9,8 +8,9 @@ import pandas as pd
 
 from bs4 import BeautifulSoup
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 START_URL = "https://princealbertbrighton.co.uk/"
@@ -95,21 +95,17 @@ def _parse_event_date(date_str: str, reference_date: date) -> pd.Timestamp:
     return candidate
 
 
-def make_driver():
-    options = Options()
-
-    options.add_argument("--headless=new")
-    options.add_argument("--window-size=1400,3000")
-
-    return webdriver.Chrome(options=options)
-
-
-def get_html(driver, url, wait=5):
-    driver.get(url)
-
-    time.sleep(wait)
-
-    return driver.page_source
+def get_html(url):
+    # Listings are server-rendered; Chrome is unnecessary and can return an
+    # incomplete page on the hosted runner. Retry transient network failures.
+    retries = Retry(total=3, backoff_factor=1,
+                    status_forcelist=[429, 500, 502, 503, 504],
+                    allowed_methods=["GET"])
+    with requests.Session() as session:
+        session.mount("https://", HTTPAdapter(max_retries=retries))
+        response = session.get(url, timeout=30)
+        response.raise_for_status()
+        return response.content
 
 
 def normalise_price(text: str) -> str:
@@ -193,7 +189,7 @@ def parse_homepage(html):
             }
         )
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=["date", "event_name", "cost"])
 
     if not df.empty:
         df = (
@@ -211,19 +207,7 @@ def parse_homepage(html):
 
 
 def scrape_in_range(start, end):
-    driver = make_driver()
-
-    try:
-        html = get_html(
-            driver,
-            START_URL,
-            wait=5,
-        )
-
-        df = parse_homepage(html)
-
-    finally:
-        driver.quit()
+    df = parse_homepage(get_html(START_URL))
 
     if df.empty:
         df["event_date"] = pd.Series(
