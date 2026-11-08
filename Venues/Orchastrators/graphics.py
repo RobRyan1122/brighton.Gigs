@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import Optional
 import random
 import json
+import re
+from datetime import date, datetime
+import sys
 
 import pandas as pd
 from dateutil import parser as dtparser
@@ -17,6 +20,8 @@ from PIL import Image, ImageDraw, ImageFont
 SCRIPT_DIR = Path(__file__).resolve().parent
 VENUES_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = VENUES_DIR.parent
+sys.path.insert(0, str(VENUES_DIR))
+from date_utils import resolve_month_day
 
 CSV_DIR = VENUES_DIR / "csvs"
 BG_DIR = VENUES_DIR / "imageassets"
@@ -139,7 +144,7 @@ def venue_name_from_filename(path: Path) -> str:
 # Date normalisation
 # ----------------------------
 
-def normalise_date_str(s: str) -> Optional[pd.Timestamp]:
+def normalise_date_str(s: str, reference_date: date | None = None, end_date: date | None = None) -> Optional[pd.Timestamp]:
     if not isinstance(s, str) or not s.strip():
         return None
 
@@ -157,8 +162,13 @@ def normalise_date_str(s: str) -> Optional[pd.Timestamp]:
     raw = raw.split(" at ")[0].strip()
 
     try:
-        dt = dtparser.parse(raw, dayfirst=True, fuzzy=True, default=dtparser.parse("2026-01-01"))
-        return pd.Timestamp(dt.date())
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+            return pd.Timestamp(date.fromisoformat(raw))
+        reference_date = reference_date or date.today()
+        dt = dtparser.parse(raw, dayfirst=True, fuzzy=True, default=datetime(2000, 1, 1))
+        explicit_year = bool(re.search(r"\b\d{4}\b", raw) or re.search(r"\d{1,2}[-/]\d{1,2}[-/]\d{2}\b", raw))
+        return pd.Timestamp(resolve_month_day(dt.month, dt.day, reference_date, end_date,
+                                             dt.year if explicit_year else None))
     except Exception:
         return None
 
@@ -278,7 +288,10 @@ def load_csv_with_venue(path: Path) -> pd.DataFrame:
 
     df = df[["date", "event_name", "cost"]].copy()
     df["venue"] = venue_name_from_filename(path)
-    df["event_day"] = df["date"].apply(normalise_date_str)
+    range_match = re.search(r"(\d{4}-\d{2}-\d{2})_to_(\d{4}-\d{2}-\d{2})", path.stem)
+    reference = date.fromisoformat(range_match.group(1)) if range_match else date.today()
+    range_end = date.fromisoformat(range_match.group(2)) if range_match else None
+    df["event_day"] = df["date"].apply(lambda value: normalise_date_str(value, reference, range_end))
 
     df = df.dropna(subset=["event_day"]).copy()
     df["event_day"] = pd.to_datetime(df["event_day"])

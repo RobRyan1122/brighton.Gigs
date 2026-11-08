@@ -22,3 +22,7 @@ Run offline regression checks with: python -m unittest discover -s tests
 Schedule keep-alive
 
 After checkout, the workflow calls GitHub's enable-workflow API using GITHUB_TOKEN (Actions write permission) to refresh the weekly schedule without creating commits. This is an inactivity-prevention workaround, not an exemption from GitHub's 60-day rule. If GitHub has already disabled the workflow, enable it manually under Actions once; a disabled workflow cannot run its own keep-alive. The keep-alive runs before scraping so venue failures do not prevent it. A failed keep-alive fails the job and uses the existing failure email step.
+
+Date handling
+
+Scrapers preserve explicit website years. Alphabet, Hope & Ruin, and Prince Albert infer missing years using the requested start/end range and write full dates into their CSVs. Shared inference supports all months, year boundaries, and leap days; without a match in the range it chooses the nearest occurrence to the reference date. A yearless website cannot distinguish multiple occurrences of the same day in a range spanning more than a year. Graphics use the CSV filename date range when older input omits a year, with the current date as the standalone fallback. Regression tests cover date handling for all eight venues. Dust processes all listed events rather than assuming chronological ordering.

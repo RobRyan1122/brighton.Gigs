@@ -166,8 +166,8 @@ def scrape_all_gig_events(start: date, end: date, polite_delay_s: float = 1.0) -
 
                 if event_day > end:
                     print("OUT OF RANGE:", event_url, row["date"])
-                    print("Reached first event after end date, stopping scrape.")
-                    break
+                    time.sleep(polite_delay_s)
+                    continue
 
                 row["event_date"] = event_date
                 rows.append(row)

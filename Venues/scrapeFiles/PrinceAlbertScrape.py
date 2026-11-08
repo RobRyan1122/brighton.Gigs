@@ -16,6 +16,9 @@ from urllib3.util.retry import Retry
 START_URL = "https://princealbertbrighton.co.uk/"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+import sys
+sys.path.insert(0, str(SCRIPT_DIR.parent))
+from date_utils import resolve_month_day
 
 OUTPUT_DIR = SCRIPT_DIR.parent / "csvs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -25,7 +28,7 @@ def _clean_text(s: str) -> str:
     return " ".join(s.split()).strip()
 
 
-def _parse_event_date(date_str: str, reference_date: date) -> pd.Timestamp:
+def _parse_event_date(date_str: str, reference_date: date, end_date: date | None = None) -> pd.Timestamp:
     if not date_str:
         return pd.NaT
 
@@ -50,7 +53,7 @@ def _parse_event_date(date_str: str, reference_date: date) -> pd.Timestamp:
 
     # If the website starts providing a full year,
     # use that rather than trying to infer one.
-    if re.search(r"\b20\d{2}\b", raw):
+    if re.search(r"\b\d{4}\b", raw):
         return pd.to_datetime(
             raw,
             errors="coerce",
@@ -63,7 +66,7 @@ def _parse_event_date(date_str: str, reference_date: date) -> pd.Timestamp:
 
     for fmt in ("%B %d", "%b %d"):
         try:
-            parsed_date = datetime.strptime(raw, fmt)
+            parsed_date = datetime.strptime(f"{raw} 2000", fmt + " %Y")
             break
         except ValueError:
             pass
@@ -71,28 +74,10 @@ def _parse_event_date(date_str: str, reference_date: date) -> pd.Timestamp:
     if parsed_date is None:
         return pd.NaT
 
-    candidate = pd.Timestamp(
-        year=reference_date.year,
-        month=parsed_date.month,
-        day=parsed_date.day,
-    )
-
-    # Handle events crossing into the next calendar year.
-    #
-    # Example:
-    # scrape date = 30 August 2026
-    # event date = January 15
-    #
-    # That should mean January 15 2027, not January 15 2026.
-    if candidate.date() < reference_date:
-        days_in_past = (reference_date - candidate.date()).days
-
-        if days_in_past > 60:
-            candidate = candidate.replace(
-                year=reference_date.year + 1
-            )
-
-    return candidate
+    try:
+        return pd.Timestamp(resolve_month_day(parsed_date.month, parsed_date.day, reference_date, end_date))
+    except ValueError:
+        return pd.NaT
 
 
 def get_html(url):
@@ -222,6 +207,7 @@ def scrape_in_range(start, end):
         lambda value: _parse_event_date(
             value,
             start,
+            end,
         )
     )
 
@@ -233,6 +219,8 @@ def scrape_in_range(start, end):
         (df["event_date"].dt.date >= start)
         & (df["event_date"].dt.date <= end)
     ].copy()
+
+    df["date"] = df["event_date"].dt.strftime("%d/%m/%Y")
 
     return (
         df.sort_values("event_date")

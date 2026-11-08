@@ -14,6 +14,9 @@ from selenium.webdriver.chrome.options import Options
 START_URL = "https://www.alphabetbrighton.com/listings"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+import sys
+sys.path.insert(0, str(SCRIPT_DIR.parent))
+from date_utils import resolve_month_day
 OUTPUT_DIR = SCRIPT_DIR.parent / "csvs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -25,45 +28,30 @@ def _clean_text(s: str) -> str:
     return " ".join(s.split()).strip()
 
 
-def _parse_event_date(date_str: str) -> pd.Timestamp:
+MONTH_PATTERN = r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+DATE_PATTERN = rf"({MONTH_PATTERN})\s*(\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(20\d{{2}}))?"
+
+
+def _parse_event_date(date_str: str, reference_date: date | None = None, end_date: date | None = None) -> pd.Timestamp:
     if not date_str:
         return pd.NaT
-
-    raw = _clean_text(date_str)
-
-    for fmt in ("%B %d %Y", "%b %d %Y"):
-        try:
-            return pd.to_datetime(f"{raw} 2026", format=fmt, errors="raise")
-        except Exception:
-            pass
-
-    return pd.to_datetime(raw, errors="coerce", dayfirst=True)
-
-
-def _parse_listing_date(listing_text: str) -> pd.Timestamp:
-    """
-    Parse dates from listing text like:
-    'APR 30: SISTER RAY DAVIES'
-    """
-    if not listing_text:
+    reference_date = reference_date or date.today()
+    match = re.fullmatch(DATE_PATTERN, _clean_text(date_str), flags=re.IGNORECASE)
+    if not match:
+        return pd.NaT
+    month, day, year = match.groups()
+    month_names = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+    try:
+        return pd.Timestamp(resolve_month_day(month_names.index(month[:3].lower()) + 1,
+                                             int(day), reference_date, end_date,
+                                             int(year) if year else None))
+    except ValueError:
         return pd.NaT
 
-    m = re.match(r"^(APR|MAY|JUN|SEP|OCT)\s+(\d{1,2})", listing_text, flags=re.IGNORECASE)
-    if not m:
-        return pd.NaT
 
-    month_map = {
-        "APR": "Apr",
-        "MAY": "May",
-        "JUN": "Jun",
-        "SEP": "Sep",
-        "OCT": "Oct",
-    }
-
-    mon = month_map[m.group(1).upper()]
-    day = m.group(2)
-
-    return _parse_event_date(f"{mon} {day}")
+def _parse_listing_date(listing_text: str, reference_date: date | None = None, end_date: date | None = None) -> pd.Timestamp:
+    match = re.match(DATE_PATTERN, _clean_text(listing_text), flags=re.IGNORECASE)
+    return _parse_event_date(match.group(0), reference_date, end_date) if match else pd.NaT
 
 
 def make_driver():
@@ -82,7 +70,7 @@ def get_html(driver, url, wait=3):
 # -------------------------
 # LISTING PAGE
 # -------------------------
-def parse_listing_for_event_urls(html):
+def parse_listing_for_event_urls(html, reference_date=None, end_date=None):
     soup = BeautifulSoup(html, "html.parser")
     items = []
     seen = set()
@@ -93,7 +81,7 @@ def parse_listing_for_event_urls(html):
 
         if "/listings/" not in href:
             continue
-        if not text.startswith(("APR", "MAY", "JUN", "SEP", "OCT", "POSTPONED")):
+        if not re.match(DATE_PATTERN, text, flags=re.IGNORECASE):
             continue
 
         url = urljoin(START_URL, href)
@@ -101,7 +89,7 @@ def parse_listing_for_event_urls(html):
             continue
         seen.add(url)
 
-        listing_date = _parse_listing_date(text)
+        listing_date = _parse_listing_date(text, reference_date, end_date)
 
         items.append({
             "url": url,
@@ -135,7 +123,7 @@ def parse_event_detail(html, url, listing_text=""):
 
     # -------- NAME --------
     event_name = ""
-    h3_candidates = soup.find_all("h3")
+    h3_candidates = soup.select(".sqs-html-content h1, .sqs-html-content h2, .sqs-html-content h3")
     for h3 in h3_candidates:
         text = _clean_text(h3.get_text(" ", strip=True))
         if text:
@@ -152,7 +140,7 @@ def parse_event_detail(html, url, listing_text=""):
         if not text:
             continue
 
-        m = re.search(r"DATE:\s*([A-Z]+\s+\d{1,2})", text, flags=re.IGNORECASE)
+        m = re.search(rf"DATE:\s*({DATE_PATTERN})", text, flags=re.IGNORECASE)
         if m and not date_value:
             date_value = m.group(1).title()
 
@@ -165,18 +153,9 @@ def parse_event_detail(html, url, listing_text=""):
 
     # -------- FALLBACK DATE FROM LISTING TEXT --------
     if not date_value and listing_text:
-        m = re.match(r"^(APR|MAY|JUN|SEP|OCT)\s+(\d{1,2})", listing_text, flags=re.IGNORECASE)
+        m = re.match(DATE_PATTERN, _clean_text(listing_text), flags=re.IGNORECASE)
         if m:
-            month_map = {
-                "APR": "Apr",
-                "MAY": "May",
-                "JUN": "Jun",
-                "SEP": "Sep",
-                "OCT": "Oct",
-            }
-            mon = month_map[m.group(1).upper()]
-            day = m.group(2)
-            date_value = f"{mon} {day}"
+            date_value = m.group(0).title()
 
     print("SCRAPED:", event_name, date_value, cost_value)
 
@@ -196,7 +175,7 @@ def scrape_in_range(start, end, delay=1):
 
     try:
         listing_html = get_html(driver, START_URL, 5)
-        items = parse_listing_for_event_urls(listing_html)
+        items = parse_listing_for_event_urls(listing_html, start, end)
 
         print(f"ALL LISTING ITEMS FOUND: {len(items)}")
 
@@ -227,13 +206,16 @@ def scrape_in_range(start, end, delay=1):
     finally:
         driver.quit()
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=["date", "event_name", "cost", "event_url"])
 
     if df.empty:
         df["event_date"] = pd.Series(dtype="datetime64[ns]")
         return df
 
-    df["event_date"] = df["date"].apply(_parse_event_date)
+    df["event_date"] = df["date"].apply(lambda value: _parse_event_date(value, start, end))
+    df = df.dropna(subset=["event_date"])
+    df = df[(df["event_date"].dt.date >= start) & (df["event_date"].dt.date <= end)].copy()
+    df["date"] = df["event_date"].dt.strftime("%d/%m/%Y")
 
     print("\nRAW DATA:")
     print(df.head(10))

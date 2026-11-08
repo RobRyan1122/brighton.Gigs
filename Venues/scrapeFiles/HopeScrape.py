@@ -11,6 +11,9 @@ import pandas as pd
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+import sys
+sys.path.insert(0, str(SCRIPT_DIR.parent))
+from date_utils import resolve_month_day
 OUTPUT_DIR = SCRIPT_DIR.parent / "csvs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -34,17 +37,7 @@ def _clean_text(s: str) -> str:
 
 _ORDINAL_RE = re.compile(r"(\d{1,2})(st|nd|rd|th)", flags=re.IGNORECASE)
 
-def _infer_year(month: int, today: date) -> int:
-    """
-    Hope listing dates do not include a year.
-    We infer:
-      - same year if month >= current month
-      - next year if month < current month (handles Dec->Jan rollover)
-    """
-    return today.year if month >= today.month else today.year + 1
-
-
-def _parse_hope_date(date_str: str, today: date | None = None) -> pd.Timestamp:
+def _parse_hope_date(date_str: str, today: date | None = None, end_date: date | None = None) -> pd.Timestamp:
     """
     Convert Hope date string like "Tue 3rd Mar at 7:30 pm" into a pandas Timestamp.
 
@@ -76,8 +69,9 @@ def _parse_hope_date(date_str: str, today: date | None = None) -> pd.Timestamp:
         mon_str = parts[2][:3]  # take "Mar" from "March" safely
         month = datetime.strptime(mon_str, "%b").month
 
-        year = _infer_year(month, today)
-        return pd.Timestamp(datetime(year, month, day))
+        explicit_year = re.search(r"\b(\d{4})\b", s)
+        return pd.Timestamp(resolve_month_day(month, day, today, end_date,
+                            int(explicit_year.group(1)) if explicit_year else None))
     except Exception:
         return pd.NaT
 
@@ -122,7 +116,7 @@ def parse_events_from_listing_html(html: str) -> list[dict]:
     return events
 
 
-def scrape_hope_listing(session: requests.Session, start_url: str = START_URL, polite_delay_s: float = 0.3) -> pd.DataFrame:
+def scrape_hope_listing(session: requests.Session, start_url: str = START_URL, polite_delay_s: float = 0.3, reference_date: date | None = None, end_date: date | None = None) -> pd.DataFrame:
     """
     Scrape all listing pages (if pagination exists) and return a DataFrame with:
       - date, event_name, event_url, event_date
@@ -150,8 +144,8 @@ def scrape_hope_listing(session: requests.Session, start_url: str = START_URL, p
     df = pd.DataFrame(all_events, columns=["date", "event_name", "event_url"]).drop_duplicates()
 
     # Add parsed date column for filtering
-    today = date.today()
-    df["event_date"] = df["date"].apply(lambda s: _parse_hope_date(s, today=today))
+    today = reference_date or date.today()
+    df["event_date"] = df["date"].apply(lambda s: _parse_hope_date(s, today=today, end_date=end_date))
 
     return df
 
@@ -300,7 +294,7 @@ def main():
     )
 
     # 1) Scrape listing once
-    df = scrape_hope_listing(session=session)
+    df = scrape_hope_listing(session=session, reference_date=start_date, end_date=end_date)
 
     # 2) Filter by date range (so we don't hit every event page)
     df = filter_events_by_date_range(df, start_date, end_date)
@@ -309,6 +303,7 @@ def main():
     df = enrich_costs_for_filtered_events(df, session=session, polite_delay_s=args.delay)
 
     # 4) Keep the columns you asked for (plus you can keep extra if you want)
+    df["date"] = df["event_date"].dt.strftime("%d/%m/%Y")
     output_df = df[["date", "event_name", "cost"]].copy()
 
     print(output_df)
